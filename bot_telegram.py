@@ -6,6 +6,7 @@
 # Cada usuário (chat_id) tem sua própria sessão.
 
 import os
+import time
 import telebot  # pip install pyTelegramBotAPI
 from orquestrador import SessaoDiagnosticoTextoLivre
 
@@ -51,7 +52,7 @@ def cmd_reset(message):
 @bot.message_handler(func=lambda message: True)
 def tratar_mensagem(message):
     chat_id = message.chat.id
-    texto = message.text.strip()
+    texto = (message.text or "").strip()
 
     # Se o usuário não tem sessão ainda, cria uma nova
     if chat_id not in user_sessions:
@@ -66,6 +67,30 @@ def tratar_mensagem(message):
     bot.send_message(chat_id, resposta, parse_mode="Markdown")
 
 
-# Inicia o polling
-print("🤖 Bot Telegram (CardioBot) iniciado com sucesso!")
-bot.infinity_polling()
+def rodar_polling_resiliente():
+    # Mantém o bot vivo: se der timeout/erro de rede, ele espera um pouco e reconecta.
+    # Isso evita que o terminal "morra" sozinho após períodos sem mensagens.
+    
+    print("Bot Telegram (CardioBot) iniciado com sucesso!")
+
+    while True:
+        try:
+            # Parâmetros importantes:
+            # - timeout / long_polling_timeout menores ajudam a evitar ReadTimeout fatal
+            # - skip_pending evita processar backlog gigante quando reconecta
+            bot.infinity_polling(
+                timeout=10,
+                long_polling_timeout=10,
+                skip_pending=True
+            )
+        except KeyboardInterrupt:
+            print("\nInterrompido pelo usuário (Ctrl+C). Encerrando.")
+            break
+        except Exception as e:
+            print(f"Erro no polling: {repr(e)}")
+            print("Vou tentar reconectar em 5 segundos...")
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+    rodar_polling_resiliente()
