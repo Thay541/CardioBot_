@@ -9,6 +9,7 @@ import os
 import time
 import telebot  # pip install pyTelegramBotAPI
 from orquestrador import SessaoDiagnosticoTextoLivre
+from requests.exceptions import ReadTimeout, ConnectionError
 
 # Não vamos colocar o token aqui por segurança
 # O token será setado na variável de ambiente
@@ -68,28 +69,39 @@ def tratar_mensagem(message):
 
 
 def rodar_polling_resiliente():
-    # Mantém o bot vivo: se der timeout/erro de rede, ele espera um pouco e reconecta.
-    # Isso evita que o terminal "morra" sozinho após períodos sem mensagens.
-    
-    print("Bot Telegram (CardioBot) iniciado com sucesso!")
+    backoff = 3  # começa com 3s
+    max_backoff = 60  # máximo 60s
 
     while True:
         try:
-            # Parâmetros importantes:
-            # - timeout / long_polling_timeout menores ajudam a evitar ReadTimeout fatal
-            # - skip_pending evita processar backlog gigante quando reconecta
+            print("CardioBot rodando (polling)...")
             bot.infinity_polling(
-                timeout=10,
-                long_polling_timeout=10,
+                timeout=20,
+                long_polling_timeout=20,
                 skip_pending=True
             )
+            backoff = 3  # se voltou a rodar, reseta backoff
         except KeyboardInterrupt:
-            print("\nInterrompido pelo usuário (Ctrl+C). Encerrando.")
+            print("\nInterrompido pelo usuário.")
             break
+        except (ReadTimeout, ConnectionError) as e:
+            print(f"Erro de rede no polling: {repr(e)}")
+            try:
+                bot.stop_polling()
+            except Exception:
+                pass
+
+            print(f"Reconectando em {backoff}s...")
+            time.sleep(backoff)
+            backoff = min(max_backoff, backoff * 2)  # backoff exponencial
         except Exception as e:
-            print(f"Erro no polling: {repr(e)}")
-            print("Vou tentar reconectar em 5 segundos...")
-            time.sleep(5)
+            # pega qualquer outro erro inesperado, mas também reconecta
+            print(f"Erro inesperado: {repr(e)}")
+            try:
+                bot.stop_polling()
+            except Exception:
+                pass
+            time.sleep(10)
 
 
 if __name__ == "__main__":
